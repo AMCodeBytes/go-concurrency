@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -27,23 +28,38 @@ func main() {
 	startNow := time.Now()
 
 	apiKey = getEnvVariable("API_KEY")
+
 	cities := []string{"London", "Glasgow", "Liverpool", "Perth", "New+York", "York", "Paris", "Tokyo", "Kyoto", "Seoul"}
 
+	ch := make(chan string)
+	var wg sync.WaitGroup
+
 	for _, city := range cities {
-		data := fetchWeather(city)
-		fmt.Println("This is the data", data)
+		wg.Add(1)
+		go fetchWeather(city, ch, &wg)
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	for result := range ch {
+		fmt.Println(result)
 	}
 
 	fmt.Println("This operation took:", time.Since(startNow))
 }
 
-func fetchWeather(city string) interface{} {
+func fetchWeather(city string, ch chan<- string, wg *sync.WaitGroup) interface{} {
 	var WeatherData struct {
 		Data []struct {
 			Temp     float64 `json:"temp"`
 			CityName string  `json:"city_name"`
 		} `json:"data"`
 	}
+
+	defer wg.Done()
 
 	url := fmt.Sprintf("https://api.weatherbit.io/v2.0/current?city=%s&key=%s", city, apiKey)
 	resp, err := http.Get(url)
@@ -59,6 +75,8 @@ func fetchWeather(city string) interface{} {
 		fmt.Printf("Error fetching weather data for %s: %s\n", city, err)
 		return WeatherData
 	}
+
+	ch <- fmt.Sprintf("This is the data - city: %s; temp: %f;", WeatherData.Data[0].CityName, WeatherData.Data[0].Temp)
 
 	return WeatherData
 }
